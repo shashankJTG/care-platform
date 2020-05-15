@@ -44,7 +44,7 @@ class SignUpSerializer(serializers.ModelSerializer):
 class UserCreateSerializer(SignUpSerializer):
     password = serializers.CharField(required=False)
     facilities = serializers.ListSerializer(
-        child=serializers.IntegerField(), required=False, allow_empty=True, write_only=True
+        child=serializers.UUIDField(), required=False, allow_empty=True, write_only=True
     )
 
     class Meta:
@@ -64,8 +64,10 @@ class UserCreateSerializer(SignUpSerializer):
 
     def validate_facilities(self, facility_ids):
         if facility_ids:
-            if len(facility_ids) != Facility.objects.filter(id__in=facility_ids).count():
-                available_facility_ids = Facility.objects.filter(id__in=facility_ids).values_list("id", flat=True)
+            if len(facility_ids) != Facility.objects.filter(external_id__in=facility_ids).count():
+                available_facility_ids = Facility.objects.filter(external_id__in=facility_ids).values_list(
+                    "external_id", flat=True
+                )
                 not_found_ids = list(set(facility_ids) - set(available_facility_ids))
                 raise serializers.ValidationError(
                     f"Some facilities are not available - {', '.join([str(_id) for _id in not_found_ids])}"
@@ -77,6 +79,7 @@ class UserCreateSerializer(SignUpSerializer):
             value is not None
             and value != self.context["created_by"].local_body
             and not self.context["created_by"].is_superuser
+            and not self.context["created_by"].user_type >= User.TYPE_VALUE_MAP["DistrictAdmin"]
         ):
             raise serializers.ValidationError("Cannot create for a different local body")
         return value
@@ -86,6 +89,7 @@ class UserCreateSerializer(SignUpSerializer):
             value is not None
             and value != self.context["created_by"].district
             and not self.context["created_by"].is_superuser
+            and not self.context["created_by"].user_type >= User.TYPE_VALUE_MAP["StateAdmin"]
         ):
             raise serializers.ValidationError("Cannot create for a different state")
         return value
@@ -119,7 +123,7 @@ class UserCreateSerializer(SignUpSerializer):
             user.set_password(validated_data["password"])
 
             if facilities:
-                facility_objs = Facility.objects.filter(id__in=facilities)
+                facility_objs = Facility.objects.filter(external_id__in=facilities)
                 facility_user_objs = [
                     FacilityUser(facility=facility, user=user, created_by=self.context["created_by"])
                     for facility in facility_objs
